@@ -6,14 +6,18 @@ import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.BitmapCompat;
 
 import android.Manifest;
 import android.content.ContentResolver;
+import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
@@ -23,16 +27,20 @@ import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -42,13 +50,68 @@ public class MainActivity extends AppCompatActivity {
     private ImageView mImageView;
     private Bitmap bitmap;
 
+    /**
+     * 最新 的插入图库方式
+     *
+     * @param context
+     * @param inputStream
+     * @param mime_type
+     * @param description
+     */
+    public static Uri saveDcim(Context context, InputStream inputStream, String name, String mime_type, String description) {
+
+        Uri imgUri = null;
+        OutputStream os = null;
+
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Images.Media.DESCRIPTION, description);
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, name + "." + mime_type);
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/" + mime_type);
+            values.put(MediaStore.Images.Media.TITLE, name + "." + mime_type);
+            values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_DCIM + "/肖像");
+
+            Uri external = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+            ContentResolver resolver = context.getContentResolver();
+
+            Uri insertUri = resolver.insert(external, values);
+            Log.d(TAG, "insertUri: " + insertUri);
+
+
+            if (insertUri != null) {
+                os = resolver.openOutputStream(insertUri);
+            }
+            if (os != null && inputStream != null) {
+                byte[] data = new byte[1024 * 4];
+                int len;
+                while ((len = inputStream.read(data)) != -1) {
+                    os.write(data, 0, len);
+                }
+                imgUri = insertUri;
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "fail: " + e.getCause());
+        } finally {
+            try {
+                if (os != null) {
+                    os.close();
+                }
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (IOException e) {
+                Log.d(TAG, "fail in close: " + e.getCause());
+            }
+        }
+        return imgUri;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         mImageView = findViewById(R.id.imagevieqw);
-
     }
 
     @Override
@@ -203,6 +266,96 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+    public void saveGrayscale(View view) {
+
+        File file = new File(getExternalCacheDir(), "肖像." + Bitmap.CompressFormat.JPEG);
+
+        OutputStream out = null;
+        try {
+            out = new FileOutputStream(file);
+            Bitmap bitmapForView = getBitmapForView(mImageView);
+            boolean compress = bitmapForView.compress(Bitmap.CompressFormat.JPEG, 80, out);
+            Log.d(TAG, "compress: " + compress);
+            out.flush();
+            out.close();
+            Uri bitmapUri = saveDcim(this, file, Bitmap.CompressFormat.JPEG.name(), "肖像");
+            Toast.makeText(this, "保存完成-》" + bitmapUri, Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "bitmapUri: " + bitmapUri);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+    }
+
+    public static Bitmap getBitmapForView(View src) {
+        Bitmap bitmap = Bitmap.createBitmap(src.getWidth(), src.getHeight(), Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        src.draw(canvas);
+        return bitmap;
+    }
+
+    /**
+     * 最新 的插入图库方式
+     *
+     * @param context
+     * @param file
+     * @param mime_type
+     * @param description
+     */
+    public static Uri saveDcim(Context context, File file, String mime_type, String description) {
+
+        Uri imgUri = null;
+        OutputStream os = null;
+        InputStream inputStream = null;
+
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Images.Media.DESCRIPTION, description);
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, file.getName() + "." + mime_type);
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/" + mime_type);
+            values.put(MediaStore.Images.Media.TITLE, file.getName() + "." + mime_type);
+            values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_DCIM + "/肖像");
+
+            Uri external = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+            ContentResolver resolver = context.getContentResolver();
+
+            Uri insertUri = resolver.insert(external, values);
+            Log.d(TAG, "insertUri: " + insertUri);
+
+
+            if (insertUri != null) {
+                os = resolver.openOutputStream(insertUri);
+            }
+            if (file != null) {
+                inputStream = new FileInputStream(file);
+            }
+            if (os != null && inputStream != null) {
+                byte[] data = new byte[1024 * 4];
+                int len;
+                while ((len = inputStream.read(data)) != -1) {
+                    os.write(data, 0, len);
+                }
+                imgUri = insertUri;
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "fail: " + e.getCause());
+        } finally {
+            try {
+                if (os != null) {
+                    os.close();
+                }
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (IOException e) {
+                Log.d(TAG, "fail in close: " + e.getCause());
+            }
+        }
+        return imgUri;
+    }
 
     public static class Sketch {
         /**
